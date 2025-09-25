@@ -201,7 +201,7 @@
                     
                     // Create a GainNode for mixing and optional volume boost
                     const gainNode = audioContext.createGain();
-                    gainNode.gain.value = 1.0; // Reset to 1.0 (no boost) to avoid distortion/clipping
+                    gainNode.gain.value = 3.0; // Reset to 1.0 (no boost) to avoid distortion/clipping
                     // If you need a boost, use a value like 1.5, but 4.0 is often too high.
                     gainNode.connect(dest);
 
