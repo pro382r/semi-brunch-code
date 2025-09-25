@@ -147,12 +147,14 @@
         let recordedChunks = [];
         let stream;
         let audioContext;
+        let micAudioTrack;
         
         // Function to start the recording process
         const startRecording = async () => {
             recordedChunks = [];
             videoPreview.srcObject = null;
             videoPreview.removeAttribute('controls');
+            videoPreview.src = null; // Fix: Clear the video src to stop any previous playback.
 
             const systemAudioEnabled = systemAudioCheckbox.checked;
             const micAudioEnabled = micAudioCheckbox.checked;
@@ -172,16 +174,13 @@
                 const videoTrack = displayStream.getVideoTracks()[0];
                 const audioTracks = [];
 
-                if (systemAudioEnabled) {
-                    const systemAudioTrack = displayStream.getAudioTracks()[0];
-                    if (systemAudioTrack) {
-                        audioTracks.push(systemAudioTrack);
-                    }
+                if (systemAudioEnabled && displayStream.getAudioTracks().length > 0) {
+                    audioTracks.push(displayStream.getAudioTracks()[0]);
                 }
 
                 if (micAudioEnabled) {
                     const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    const micAudioTrack = micStream.getAudioTracks()[0];
+                    micAudioTrack = micStream.getAudioTracks()[0];
                     if (micAudioTrack) {
                         audioTracks.push(micAudioTrack);
                     }
@@ -192,9 +191,14 @@
                     audioContext = new (window.AudioContext || window.webkitAudioContext)();
                     const dest = audioContext.createMediaStreamDestination();
                     
+                    // Create a GainNode to boost the volume
+                    const gainNode = audioContext.createGain();
+                    gainNode.gain.value = 2.0; // Adjust this value to increase/decrease volume
+                    gainNode.connect(dest);
+
                     audioTracks.forEach(track => {
                         const source = audioContext.createMediaStreamSource(new MediaStream([track]));
-                        source.connect(dest);
+                        source.connect(gainNode);
                     });
                     
                     stream = new MediaStream([videoTrack, dest.stream.getAudioTracks()[0]]);
@@ -253,7 +257,7 @@
                 pauseButton.disabled = false;
                 stopButton.disabled = false;
                 systemAudioCheckbox.disabled = true;
-                micAudioCheckbox.disabled = true;
+                // Keep micAudioCheckbox enabled for live toggling
                 downloadArea.classList.add('hidden');
                 statusText.textContent = "Recording started...";
             } catch (err) {
@@ -297,6 +301,11 @@
         startButton.addEventListener('click', startRecording);
         pauseButton.addEventListener('click', togglePauseResume);
         stopButton.addEventListener('click', stopRecording);
+        micAudioCheckbox.addEventListener('change', (e) => {
+            if (micAudioTrack) {
+                micAudioTrack.enabled = e.target.checked;
+            }
+        });
     </script>
 
 </body>
