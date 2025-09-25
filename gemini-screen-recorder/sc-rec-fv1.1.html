@@ -193,7 +193,7 @@
                     
                     // Create a GainNode to boost the volume
                     const gainNode = audioContext.createGain();
-                    gainNode.gain.value = 2.0; // Adjust this value to increase/decrease volume
+                    gainNode.gain.value = 20.0; // Adjust this value to increase/decrease volume
                     gainNode.connect(dest);
 
                     audioTracks.forEach(track => {
