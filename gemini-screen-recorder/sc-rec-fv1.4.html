@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screen Recorder</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #000052;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background-color: #0c1232;
+            padding: 2.5rem;
+            border-radius: 1.5rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        #video-preview {
+            width: 100%;
+            height: auto;
+            max-height: 500px;
+            border-radius: 1rem;
+            margin-bottom: 1.5rem;
+            border: 2px solid #e5e7eb;
+            background-color: #000;
+        }
+        .btn {
+            padding: 0.75rem 2rem;
+            border-radius: 9999px;
+            font-weight: 600;
+            color: white;
+            transition: transform 0.2s, background-color 0.2s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            white-space: nowrap;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        .btn-green {
+            background-color: #10b981;
+        }
+        .btn-green:hover {
+            background-color: #059669;
+        }
+        .btn-red {
+            background-color: #ef4444;
+        }
+        .btn-red:hover {
+            background-color: #dc2626;
+        }
+        .btn-blue {
+            background-color: #3b82f6;
+        }
+        .btn-blue:hover {
+            background-color: #2563eb;
+        }
+        .btn:disabled {
+            background-color: #a3a3a3;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .checkbox-container {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 1.5rem;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1 class="text-4xl sm:text-8xl font-extrabold text-gray-900 mb-4" style="color: #2962ff;">
+            Screen Recorder
+        </h1>
+        <p class="text-lg text-gray-600 mb-8" style="color: #5aa389;">
+            Capture your screen with audio. Best experience for Chrome browser.
+        </p>
+
+        <video id="video-preview" autoplay playsinline muted></video>
+
+        <div class="checkbox-container">
+            <div class="checkbox-group">
+                <input type="checkbox" id="systemAudioCheckbox" class="h-4 w-4 text-green-600 rounded">
+                <label for="systemAudioCheckbox" class="ml-2 text-gray-700" style="color: #66ffde">System Audio</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="micAudioCheckbox" class="h-4 w-4 text-green-600 rounded">
+                <label for="micAudioCheckbox" class="ml-2 text-gray-700" style="color: #66ffde">Microphone</label>
+            </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-4 mb-8">
+            <button id="startButton" class="btn btn-green">
+                Start Recording
+            </button>
+            <button id="pauseButton" class="btn btn-blue" disabled>
+                Pause
+            </button>
+            <button id="stopButton" class="btn btn-red" disabled>
+                Stop Recording
+            </button>
+        </div>
+
+        <p id="status" class="text-sm font-medium text-gray-500 mb-4">
+            Select audio options and click 'Start'.
+        </p>
+
+        <div id="download-area" class="mt-8 hidden">
+            <a id="download-link" href="#" download="my-screen-recording.webm" class="text-blue-600 underline text-lg font-semibold hover:text-blue-800">
+                Download Recording
+            </a>
+            <p class="text-sm text-gray-500 mt-2">Your recording is ready for download.</p>
+        </div>
+    </div>
+
+    <script>
+        // Get references to DOM elements
+        const videoPreview = document.getElementById('video-preview');
+        const startButton = document.getElementById('startButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const stopButton = document.getElementById('stopButton');
+        const systemAudioCheckbox = document.getElementById('systemAudioCheckbox');
+        const micAudioCheckbox = document.getElementById('micAudioCheckbox');
+        const statusText = document.getElementById('status');
+        const downloadArea = document.getElementById('download-area');
+        const downloadLink = document.getElementById('download-link');
+        
+        // Global variables for recording state
+        let mediaRecorder;
+        let recordedChunks = [];
+        let stream;
+        let audioContext;
+        let micAudioTrack;
+        let micStream; // Added to hold the original microphone stream
+
+        // Function to start the recording process
+        const startRecording = async () => {
+            recordedChunks = [];
+            videoPreview.srcObject = null;
+            videoPreview.removeAttribute('controls');
+            videoPreview.src = null; // Clear the video src to stop any previous playback.
+
+            const systemAudioEnabled = systemAudioCheckbox.checked;
+            const micAudioEnabled = micAudioCheckbox.checked;
+
+            if (!systemAudioEnabled && !micAudioEnabled) {
+                statusText.textContent = "Please select at least one audio source.";
+                return;
+            }
+
+            try {
+                // Get the screen-share stream with video and optional system audio
+                // The audio option in getDisplayMedia *only* controls system audio selection
+                const displayStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
+                    audio: systemAudioEnabled // Request system audio only if checked
+                });
+
+                const videoTrack = displayStream.getVideoTracks()[0];
+                const audioTracksToMix = [];
+
+                if (systemAudioEnabled && displayStream.getAudioTracks().length > 0) {
+                    audioTracksToMix.push(displayStream.getAudioTracks()[0]);
+                }
+
+                if (micAudioEnabled) {
+                    // Get the separate mic stream
+                    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    micAudioTrack = micStream.getAudioTracks()[0];
+                    if (micAudioTrack) {
+                        audioTracksToMix.push(micAudioTrack);
+                    }
+                }
+                
+                // --- Crucial: Set the preview source *but keep it muted* ---
+                // We use displayStream for preview as it contains the video track
+                videoPreview.srcObject = displayStream; 
+                videoPreview.muted = true; // Ensure the preview is MUTED to prevent feedback
+                // -------------------------------------------------------------------
+
+                // Use Web Audio API to mix multiple audio streams if needed
+                if (audioTracksToMix.length > 0) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const dest = audioContext.createMediaStreamDestination();
+                    
+                    // Create a GainNode for mixing and optional volume boost
+                    const gainNode = audioContext.createGain();
+                    gainNode.gain.value = 1.0; // Reset to 1.0 (no boost) to avoid distortion/clipping
+                    // If you need a boost, use a value like 1.5, but 4.0 is often too high.
+                    gainNode.connect(dest);
+
+                    audioTracksToMix.forEach(track => {
+                        const source = audioContext.createMediaStreamSource(new MediaStream([track]));
+                        source.connect(gainNode);
+                    });
+                    
+                    // Create the final recording stream with video and mixed audio
+                    stream = new MediaStream([videoTrack, dest.stream.getAudioTracks()[0]]);
+                } else {
+                    // No audio selected, just use the video track
+                    stream = new MediaStream([videoTrack]);
+                }
+                
+                // Initialize MediaRecorder with the combined stream
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
+                
+                // Event listener to collect data chunks
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                    }
+                };
+
+                // Event listener for when recording stops
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    // Set up download link
+                    downloadLink.href = url;
+                    
+                    // Set video preview to playback the recorded video
+                    videoPreview.srcObject = null;
+                    videoPreview.src = url;
+                    videoPreview.controls = true;
+                    videoPreview.muted = false; // Unmute for playback
+                    
+                    // Show the download area
+                    downloadArea.classList.remove('hidden');
+                    statusText.textContent = "Recording finished. You can preview and download your video below.";
+                    
+                    // Stop all media tracks to free up resources
+                    stream.getTracks().forEach(track => track.stop());
+                    
+                    // Clean up the temporary mic stream resource
+                    if (micStream) {
+                        micStream.getTracks().forEach(track => track.stop());
+                    }
+
+                    if (audioContext) {
+                        audioContext.close();
+                    }
+                    
+                    // Reset global variables
+                    micStream = null;
+                    micAudioTrack = null;
+                };
+
+                // Add an event listener to automatically stop recording when screen sharing ends
+                videoTrack.onended = () => {
+                    stopRecording();
+                };
+                
+                // Start recording
+                mediaRecorder.start();
+                
+                // Update UI state
+                startButton.disabled = true;
+                pauseButton.disabled = false;
+                stopButton.disabled = false;
+                systemAudioCheckbox.disabled = true;
+                // micAudioCheckbox stays enabled so mic can be toggled via the event listener below
+                downloadArea.classList.add('hidden');
+                statusText.textContent = "Recording started...";
+            } catch (err) {
+                console.error("Error accessing media devices:", err);
+                statusText.textContent = "Error: Could not start recording. Please check permissions.";
+                
+                // Reset UI state on error
+                startButton.disabled = false;
+                pauseButton.disabled = true;
+                stopButton.disabled = true;
+                systemAudioCheckbox.disabled = false;
+                micAudioCheckbox.disabled = false;
+                
+                // Clean up any partially created streams
+                if (micStream) {
+                    micStream.getTracks().forEach(track => track.stop());
+                    micStream = null;
+                    micAudioTrack = null;
+                }
+            }
+        };
+
+        // Function to toggle pause/resume
+        const togglePauseResume = () => {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.pause();
+                pauseButton.textContent = 'Resume';
+                statusText.textContent = "Recording paused...";
+            } else if (mediaRecorder && mediaRecorder.state === 'paused') {
+                mediaRecorder.resume();
+                pauseButton.textContent = 'Pause';
+                statusText.textContent = "Recording resumed...";
+            }
+        };
+
+        // Function to stop the recording
+        const stopRecording = () => {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                startButton.disabled = false;
+                pauseButton.disabled = true;
+                stopButton.disabled = true;
+                systemAudioCheckbox.disabled = false;
+                micAudioCheckbox.disabled = false;
+                statusText.textContent = "Processing recording...";
+            }
+        };
+
+        // Add event listeners to the buttons
+        startButton.addEventListener('click', startRecording);
+        pauseButton.addEventListener('click', togglePauseResume);
+        stopButton.addEventListener('click', stopRecording);
+        
+        // Live mic audio track toggle (still works)
+        micAudioCheckbox.addEventListener('change', (e) => {
+            // This toggles the mic's track 'enabled' state while recording is active
+            if (micAudioTrack) {
+                micAudioTrack.enabled = e.target.checked;
+            }
+        });
+    </script>
+</body>
+</html>
