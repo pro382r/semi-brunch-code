@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Screen Recorder</title>
+<link rel="icon" type="image/png" href="https://cdn.discordapp.com/attachments/1269586214391124088/1422938128884301985/rec-button.png?ex=68de7de6&is=68dd2c66&hm=8254c0b2c29d214c07fae8dbd7037c407e6aa6ab625bc50c6ac26286dc83297e"> 
+<style>
+/* --- Light Mode (Default) Styles --- */
+body{
+  font-family:sans-serif;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  min-height:100vh;
+  background:#f8f9fa; /* Light background */
+  margin:0;
+  transition: background 0.3s;
+}
+.container{
+  background:#fff; /* Light container background */
+  padding:2rem;
+  border-radius:10px;
+  box-shadow:0 4px 10px rgba(0,0,0,.1);
+  max-width:700px;
+  width:95%;
+  text-align:center;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+h1{color:#007bff}
+button{
+  padding:.5rem 1rem;
+  margin:.3rem;
+  border:0;
+  border-radius:6px;
+  color:#fff;
+  cursor:pointer;
+  transition: background 0.3s;
+}
+#start{background:#28a745}
+#pause{background:#6c757d}
+#stop{background:#dc3545}
+#download{background:#007bff}
+.timer{
+  margin:1rem;
+  font-weight:bold;
+  color:#007bff;
+}
+video{
+  width:100%;
+  margin-top:1rem;
+  border-radius:6px;
+  background:#000;
+}
+
+/* --- Dark Mode Styles --- */
+body.dark-mode {
+  background: #121212; /* Darker background */
+  color: #e0e0e0;      /* Light text */
+}
+
+body.dark-mode .container {
+  background: #1e1e1e; /* Dark container background */
+  box-shadow:0 4px 10px rgba(0,0,0,.5);
+}
+
+body.dark-mode h1,
+body.dark-mode .timer,
+body.dark-mode label,
+body.dark-mode h3 {
+  color: #bb86fc; /* Accent color for dark mode */
+}
+
+body.dark-mode #start {background: #00a854;}
+body.dark-mode #pause {background: #909090;}
+body.dark-mode #stop {background: #ff5757;}
+body.dark-mode #download {background: #3700b3;}
+
+body.dark-mode select {
+    background: #333;
+    color: #e0e0e0;
+    border: 1px solid #555;
+}
+
+/* Style for the new dark mode button */
+#darkModeToggle {
+  background: #6c757d; 
+  color: #fff;
+  margin-bottom: 1rem;
+}
+body.dark-mode #darkModeToggle {
+  background: #bb86fc;
+  color: #1e1e1e;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Web Screen Recorder</h1>
+  
+  <button id="darkModeToggle">Toggle Dark Mode</button><br> 
+
+  <select id="size">
+    <option value="default">Default</option>
+    <option value="720p">720p</option>
+    <option value="1080p">1080p</option>
+    <option value="4k">4K</option>
+  </select>
+  <label><input type="checkbox" id="mic"> Mic</label><br>
+  <button id="start">Start</button>
+  <button id="pause" style="display:none">Pause</button>
+  <button id="stop" style="display:none">Stop</button>
+  <div class="timer" id="timer" style="display:none">00:00:00</div>
+  <video id="live" autoplay muted style="display:none"></video>
+  <div id="previewBox" style="display:none">
+    <h3>Preview</h3>
+    <video id="preview" controls></video>
+    <button id="download">Download</button>
+  </div>
+</div>
+  
+<script>
+let rec,chunks=[],startT,elapsed=0,timerI,fullBlob;
+const $=id=>document.getElementById(id);
+const fmt=ms=>new Date(ms).toISOString().substr(11,8);
+
+// --- Dark Mode Functions ---
+const darkModeToggle = $("darkModeToggle");
+const body = document.body;
+const DARK_MODE_KEY = 'darkModeEnabled';
+
+// Function to set the theme based on preference
+function setTheme(isDark) {
+    if (isDark) {
+        body.classList.add('dark-mode');
+        darkModeToggle.textContent = 'Toggle Light Mode';
+    } else {
+        body.classList.remove('dark-mode');
+        darkModeToggle.textContent = 'Toggle Dark Mode';
+    }
+}
+
+// Check for saved preference on load
+function loadThemePreference() {
+    const savedPreference = localStorage.getItem(DARK_MODE_KEY);
+    // If preference is saved, use it. Otherwise, check system preference (optional)
+    const prefersDark = savedPreference === 'true' || 
+                       (savedPreference === null && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    setTheme(prefersDark);
+}
+
+// Toggle and save the preference
+function toggleDarkMode() {
+    const isDark = !body.classList.contains('dark-mode');
+    setTheme(isDark);
+    localStorage.setItem(DARK_MODE_KEY, isDark);
+}
+
+// Load the theme when the script runs
+loadThemePreference();
+
+// Add event listener for the toggle button
+darkModeToggle.onclick = toggleDarkMode;
+
+// --- Existing Screen Recorder Functions ---
+
+function constraints(){
+  switch($("size").value){
+    case"720p":return{width:1280,height:720};
+    case"1080p":return{width:1920,height:1080};
+    case"4k":return{width:3840,height:2160};
+    default:return{};
+  }
+}
+async function startRec(){
+  try{
+    const scr=await navigator.mediaDevices.getDisplayMedia({video:constraints(),audio:true});
+    if($("mic").checked){
+      const mic=await navigator.mediaDevices.getUserMedia({audio:true});
+      scr.addTrack(mic.getAudioTracks()[0]);
+    }
+    $("live").srcObject=scr;$("live").style.display="block";
+    rec=new MediaRecorder(scr);
+    rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
+    rec.onstop=()=>{
+      fullBlob=new Blob(chunks,{type:"video/webm"});
+      chunks=[];
+      $("preview").src=URL.createObjectURL(fullBlob);
+      $("previewBox").style.display="block";
+    };
+    rec.start();
+    startT=Date.now();elapsed=0;
+    updateTimer(); // show 00:00:00 instantly
+    timerI=setInterval(updateTimer,1000);
+
+    $("start").style.display="none";
+    $("pause").style.display="inline";
+    $("stop").style.display="inline";
+    $("timer").style.display="block";
+  }catch(e){alert("Permission denied or no media")}
+}
+function pauseRec(){
+  if(rec.state=="recording"){
+    rec.pause();
+    clearInterval(timerI);
+    elapsed+=Date.now()-startT;   // save time till now
+    $("pause").textContent="Resume";
+  }else{
+    rec.resume();
+    startT=Date.now();            // restart timing
+    updateTimer();
+    timerI=setInterval(updateTimer,1000);
+    $("pause").textContent="Pause";
+  }
+}
+function stopRec(){
+  rec.stop();
+  clearInterval(timerI);
+  $("start").style.display="inline";
+  $("pause").style.display="none";
+  $("stop").style.display="none";
+  $("timer").style.display="none";
+  $("live").style.display="none";
+}
+
+function updateTimer(){
+  $("timer").textContent=fmt(elapsed+(Date.now()-startT));
+}
+$("start").onclick=startRec;
+$("pause").onclick=pauseRec;
+$("stop").onclick=stopRec;
+$("download").onclick=()=>{
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(fullBlob);
+  a.download="recording.webm";
+  a.click();
+};
+// Note: Removed the speed onchange listener as the speed select element was not in the HTML
+// $("speed").onchange=()=>{$("preview").playbackRate=parseFloat($("speed").value)};
+</script>
+</body>
+</html>
